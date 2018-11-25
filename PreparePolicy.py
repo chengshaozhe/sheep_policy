@@ -41,8 +41,8 @@ class DistractorPolicy():
 if __name__=='__main__':
 	statesList=[[10,10,0,0],[10,5,0,0],[15,15,0,0]]
 	statesDF=pd.DataFrame(statesList,index=[0,1,2],columns=['positionX','positionY','velocityX','velocityY'])
-	sheepIdentity=1
-	wolfIdentity=0
+	sheepIdentity=0
+	wolfIdentity=1
 	distractorIdentity=2
 	wolfPrecision=50
 	distractorPrecision=0.5/3.14
