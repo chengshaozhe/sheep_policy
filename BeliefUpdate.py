@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np 
 import scipy.stats as stats
 import math
-import datetime
 
 def computeDeviationFromTrajectory(vector1,vector2):
 	def calVectorNorm(vector):
@@ -55,6 +54,7 @@ class BeliefUpdate():
 		return currentBelief
 
 if __name__=="__main__":
+	import datetime
 	time0=datetime.datetime.now()
 	import Transition
 	statesList=[[10,10,0,0],[10,5,0,0],[15,15,0,0]]
