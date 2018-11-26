@@ -42,6 +42,7 @@ class BeliefUpdate():
 	def __init__(self,assumeWolfPrecisionList,sheepIdentity):
 		self.assumeWolfPrecisionList=assumeWolfPrecisionList
 		self.sheepIdentity=sheepIdentity
+
 	def __call__(self,oldBelief,currentStates):
 		deviationAngleDF=computeDeviationAngleDF(oldBelief, currentStates, self.sheepIdentity)
 		hypothesisInformation=createHypothesisInformationDF(self.assumeWolfPrecisionList, deviationAngleDF, oldBelief)
@@ -76,7 +77,7 @@ if __name__=="__main__":
 	print(currentStates)
 	print(currentBelief)
 
-
+	print(np.asarray(currentBelief).flatten())
 
 
 

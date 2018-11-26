@@ -8,7 +8,7 @@ import csv
 from PIL import Image
 
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, MaxPooling2D, Flatten
+from keras.layers import Dense, Conv2D, MaxPooling2D, Flatten,LSTM
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint
 from keras import backend as K
@@ -16,11 +16,13 @@ from keras import backend as K
 from viz import *
 from reward import *
 from gridworld import *
-
+from BeliefUpdate import *
+from PreparePolicy import *
+import Transition
 
 class DQNAgent:
-    def __init__(self, input_shape, action_size):
-        self.input_shape = input_shape
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
         self.action_size = action_size
         self.memory = deque(maxlen=20000)
         self.gamma = 0.95
@@ -28,11 +30,11 @@ class DQNAgent:
         self.epsilon_min = 0.01
         self.epsilon_decay = 0.99
         self.learning_rate = 0.001
-        self.model = self._build_cnn()
-        self.target_model = self._build_cnn()
-        self.update_target_model()
+        self.model = self._buildDNN()
+        self.target_model = self._buildDNN()
+        self.updateTargetModel()
 
-    # def _build_model(self):
+    # def _buildDNN(self):
     #     model = tf.keras.Sequential()
     #     model.add(tf.keras.layers.Dense(
     #         32, input_dim=self.state_size, activation='relu'))
@@ -43,7 +45,7 @@ class DQNAgent:
     #                   optimizer=tf.keras.optimizers.Adam(lr=self.learning_rate))
     #     return model
 
-    def _huber_loss(self, y_true, y_pred, clip_delta=1.0):
+    def _huberLoss(self, y_true, y_pred, clip_delta=1.0):
         error = y_true - y_pred
         cond = K.abs(error) <= clip_delta
 
@@ -53,31 +55,24 @@ class DQNAgent:
 
         return K.mean(tf.where(cond, squared_loss, quadratic_loss))
 
-    def _build_model(self):
+    def _buildDNN(self):
         model = Sequential()
         model.add(Dense(32, input_dim=self.state_size, activation='relu'))
         model.add(Dense(32, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss=self._huber_loss,
+        model.add(Dense(self.action_size, activation='softmax'))
+        model.compile(loss='mse',
                       optimizer=Adam(lr=self.learning_rate))
         return model
 
-    def _build_cnn(self):
+    def _buildRNN(self):
         model = Sequential()
-        model.add(Conv2D(32, kernel_size=(5, 5), strides=(1, 1),
-                         activation='relu',
-                         input_shape=self.input_shape))
-        model.add(MaxPooling2D(pool_size=(2, 2), strides=(2, 2)))
-        model.add(Conv2D(64, (5, 5), activation='relu'))
-        model.add(MaxPooling2D(pool_size=(2, 2)))
-        model.add(Flatten())
-        model.add(Dense(256, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss=self._huber_loss,
+        model.add(LSTM(128, input_shape=(self.state_size,1), return_sequences=False))
+        model.add(Dense(self.action_size, activation='softmax'))
+        model.compile(loss='mse',
                       optimizer=Adam(lr=self.learning_rate))
         return model
 
-    def update_target_model(self):
+    def updateTargetModel(self):
         self.target_model.set_weights(self.model.get_weights())
 
     def remember(self, state, action, reward, next_state, done):
@@ -90,17 +85,17 @@ class DQNAgent:
         action = np.argmax(action_values[0])
         return action
 
-    def get_state_value(self, state):
+    def getStateValue(self, state):
         action_values = self.model.predict(state)
         state_value = np.amax(action_values[0])
         return state_value
 
-    def get_mean_action_values(self, state):
+    def getMeanActionValues(self, state):
         action_values = self.model.predict(state)
         state_value = np.mean(action_values[0])
         return state_value
 
-    def get_Q(self, state):
+    def getQ(self, state):
         action_values = self.model.predict(state)
         return action_values[0]
 
@@ -141,21 +136,34 @@ class DQNAgent:
         return action_index_max
 
 
-def log_results(filename, loss_log):
+def logResults(filename, loss_log):
     with open('results/loss_data-' + filename + '.csv', 'w') as lf:
         wr = csv.writer(lf)
         for loss_item in loss_log:
             wr.writerow(loss_item)
 
 
-def belief_reward(state, action, terminals=[]):
-    agent_state, target1_state, target2_state, belief_prob = state
+def isTerminals(state):
+    agent_state = state[:4]
+    target1_state = state[4:8]
+    target2_state = state[8:12]
+    belief_prob = state[12:]
+    if agent_state[:2].all == target1_state[:2].all or agent_state[:2].all ==target2_state[:2].all:
+        return True
+    return False
+
+def beliefReward(state, action):
+    agent_state = state[:4]
+    target1_state = state[4:8]
+    target2_state = state[8:12]
+    belief_prob = state[12:]
+
     r1 = distance_punish(agent_state, action, target1_state,
                          grid_dist) * belief_prob[1]
     r2 = distance_punish(agent_state, action, target2_state,
                          grid_dist) * belief_prob[2]
     reward = r1 + r2
-    if agent_state in terminals:
+    if isTerminals(state):
         return -500
     return reward
 
@@ -163,31 +171,42 @@ def belief_reward(state, action, terminals=[]):
 if __name__ == '__main__':
     env = GridWorld("test", nx=800, ny=800)
 
-    sheep_states = [(5, 5)]
     obstacle_states = []
     env.add_obstacles(obstacle_states)
-    env.add_terminals(sheep_states)
-
-    sheeps = {s: 500 for s in sheep_states}
     obstacles = {s: -100 for s in obstacle_states}
 
-    S = tuple(it.product(range(env.nx), range(env.ny)))
-    A = ((1, 0), (0, 1), (-1, 0), (0, -1))
+    # agent_state = [x1, y1, v1x1, v1x2]
+    # target1_state = [x2, y2, v2x1, v2x2]
+    # target2_state = [x3, y3, v3x1, v3x2]
+    # belief_prob = [p1, p2, p3]
+    # state = [agent_state, target1_state, target2_state, belief_prob]
 
-    action_size = len(A)
+    statesList = [[10,10,0,0],[10,5,0,0],[15,15,0,0]]
 
-    agent_state = ((x1, y1), (v1x1, v1x2))
-    target1_state = ((x2, y2), (v2x1, v2x2))
-    target2_state = ((x3, y3), (v3x1, v3x2))
-    belief_prob = (p1, p2, p3)
+    speedList = [5,3,3]
+    movingRange=[0,0,15,15]
+    assumeWolfPrecisionList=[50,1.3]
+    sheepIdentity=0
+    wolfIdentity=1
+    distractorIdentity=2
+    wolfPrecision=50
+    distractorPrecision=0.5/3.14
+    
+    transState = Transition.Transition(movingRange, speedList)
+    updateBelief = BeliefUpdate(assumeWolfPrecisionList, sheepIdentity)
 
-    state = [agent_state, target1_state, target2_state, belief_prob]
-
-    state = np.array(state)
-
-    state_size = len(state)
+    takeWolfAction = WolfPolicy(sheepIdentity, wolfIdentity, speedList[wolfIdentity])
+    takeDistractorAction = DistractorPolicy(distractorIdentity, distractorPrecision, speedList[distractorIdentity])
 
 
+    numOfActions = 16
+    actionAnglesList = [i * (360 / numOfActions)
+                        for i in range(1, numOfActions + 1)]
+    sheepActionList = [(speedList[sheepIdentity] * np.cos(actionAngles * np.pi / 180),
+                    speedList[sheepIdentity] * np.sin(actionAngles * np.pi / 180)) for actionAngles in actionAnglesList]
+
+    state_size = 15
+    action_size = numOfActions
     agent = DQNAgent(state_size, action_size)
     # agent.load("./save/[(5, 5)]_episode_120.h5")
     loss_log = []
@@ -198,36 +217,54 @@ if __name__ == '__main__':
     done = False
 
     for e in range(num_opisodes):
-        wolf_state = random.choice(S)
+
+        statesList = [[random.randint(0,800),random.randint(0,800),0,0],
+                        [random.randint(0,800),random.randint(0,800),0,0],
+                        [random.randint(0,800),random.randint(0,800),0,0]]
+
+        oldStates = pd.DataFrame(statesList,index=[0,1,2],columns=['positionX','positionY','velocityX','velocityY'])
+        oldBelief = initiateBeliefDF(statesList)
+
+        done = False
 
         for time in range(1000):
 
-            action = agent.act(wolf_state)
-            action_grid = A[action]
+            oldBelief_input = np.asarray(oldBelief).flatten()
+            oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
 
-            wolf_next_state = transition(
-                wolf_state, action_grid, env)
+            action = agent.act(oldBelief_input)
+            # print(action)
 
-            grid_reward = ft.partial(grid_reward, env=env, const=-1)
-            to_sheep_reward = ft.partial(
-                distance_reward, goal=sheep_states, dist_func=grid_dist, unit=1)
-            func_lst = [grid_reward, to_sheep_reward]
-            get_reward = ft.partial(sum_rewards, func_lst=func_lst)
+            sheepAction = sheepActionList[action]
+            # print (sheepAction)
 
-            reward = get_reward(wolf_state, action)
+            wolfAction = takeWolfAction(oldStates, wolfPrecision)
+            distractorAction = takeDistractorAction(oldStates)
 
-            done = wolf_next_state in env.terminals
-            next_state_img = state_to_image_array(env, image_size,
-                                                  [wolf_next_state], sheeps, obstacles)
-            # plt.pause(0.1)
-            plt.close('all')
+            currentActions = [sheepAction, wolfAction, distractorAction]
+            # print (currentActions)
+            
+            currentStates = transState(oldStates, currentActions)
+            currentBelief = updateBelief(oldBelief, currentStates)
+            currentBelief_input = np.asarray(currentBelief).flatten()
+            reward = beliefReward(currentBelief_input, currentActions)
 
-            next_state_img = np.reshape(
-                next_state_img, [1, image_size[0], image_size[1], 3])
+            # print(currentBelief_input)
+            # print (reward)
 
-            agent.remember(state_img, action, reward, next_state_img, done)
-            wolf_state = wolf_next_state
-            state_img = next_state_img
+            if isTerminals(currentBelief_input):
+                done = 1
+            else:
+                done = 0
+
+            # plt.pause(0.01)
+            # plt.close('all')
+
+            currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
+            agent.remember(oldBelief_input, action, reward, currentBelief_input, done)
+
+            oldStates = currentStates
+            oldBelief = currentBelief
 
             if len(agent.memory) > replay_start_size:
                 states_mb, targets_mb = agent.replay(batch_size)
@@ -241,17 +278,17 @@ if __name__ == '__main__':
                     loss_log.append(loss)
 
             if done:
-                agent.update_target_model()
+                agent.updateTargetModel()
                 break
 
         if e % 10 == 0:
             module_path = os.path.dirname(os.path.abspath(__file__))
             data_path = os.path.join(module_path, "save")
-            name = str(sheep_states) + '_episode_' + str(e) + '.h5'
+            name = 'episode_' + str(e) + '.h5'
             weight_path = os.path.join(data_path, name)
             agent.save(weight_path)
 
-            filename = str(image_size) + '-' + \
+            filename = str(action_size) + '-' + \
                 str(batch_size) + 'episode-' + str(e)
-            log_results(filename, loss_log)
+            logResults(filename, loss_log)
             loss_log = []
