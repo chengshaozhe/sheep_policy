@@ -1,9 +1,9 @@
 # for linux ssh: set matplotlib to not use the Xwindows backend.
 import matplotlib
-# matplotlib.use('Agg')
+matplotlib.use('Agg')
 
 import matplotlib.pyplot as plt
-plt.ion()
+# plt.ion()
 # plt.ioff()
 
 import matplotlib as mp
