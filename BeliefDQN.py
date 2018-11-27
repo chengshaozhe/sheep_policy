@@ -66,7 +66,7 @@ class DQNAgent:
 
     def _buildRNN(self):
         model = Sequential()
-        model.add(LSTM(128, input_dim=self.state_size, return_sequences=False))
+        model.add(LSTM(128, input_shape=(1,self.state_size), return_sequences=False))
         model.add(Dense(self.action_size, activation='softmax'))
         model.compile(loss='mse',
                       optimizer=Adam(lr=self.learning_rate))
@@ -144,25 +144,27 @@ def logResults(filename, loss_log):
 
 
 def isTerminals(state):
-    agent_state = state[:4]
-    wolf_state = state[4:8]
-    distractor_state = state[8:12]
-    belief_prob = state[12:]
+    agent_state = state[:5]
+    wolf_state = state[5:10]
+    distractor_state = state[10:15]
+
     if agent_state[:2].all == wolf_state[:2].all:
         return True
     return False
 
 def beliefReward(state, action):
-    agent_state = state[:4]
-    wolf_state = state[4:8]
-    distractor_state = state[8:12]
-    belief_prob = state[12:]
+    agent_state = state[:5]
+    wolf_state = state[5:10]
+    distractor_state = state[10:15]
 
-    r1 = distance_punish(agent_state, action, wolf_state,
-                         grid_dist) * belief_prob[1]
-    r2 = distance_punish(agent_state, action, distractor_state,
-                         grid_dist) * belief_prob[2]
-    reward = r1 + r2
+    d1 = distance_punish(agent_state[:2], action, wolf_state[:2], grid_dist) 
+    d2 = distance_punish(agent_state[:2], action, distractor_state[:2], grid_dist) 
+
+    p1 = np.exp(wolf_state[-1])
+    p2 = np.exp(distractor_state[-1])
+
+    reward = d1 * p1 + d2 * p2
+
     if isTerminals(state):
         return -500
     return reward
@@ -207,7 +209,7 @@ if __name__ == '__main__':
     # agent.load("./save/[(5, 5)]_episode_120.h5")
     loss_log = []
 
-    batch_size = 21
+    batch_size = 16
     replay_start_size = 21
     num_opisodes = 1001
     done = False
@@ -223,19 +225,19 @@ if __name__ == '__main__':
 
         done = False
 
-        for time in range(21):
+        for time in range(1000):
 
             oldBelief_input = np.asarray(oldBelief).flatten()
-            oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
-            # oldBelief_input = np.reshape(oldBelief_input,[1,1,state_size]) # LSTM 
+            # oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
+            oldBelief_input = np.reshape(oldBelief_input,[1,1,state_size]) # LSTM 
 
             action = agent.act(oldBelief_input)
-            # print(action)
 
             sheepAction = sheepActionList[action]
-            # print (sheepAction)
+            # print (action, sheepAction)
 
             wolfAction = takeWolfAction(oldStates, wolfPrecision)
+
             distractorAction = takeDistractorAction(oldStates)
 
             currentActions = [sheepAction, wolfAction, distractorAction]
@@ -243,6 +245,7 @@ if __name__ == '__main__':
             
             currentStates = transState(oldStates, currentActions)
             currentBelief = updateBelief(oldBelief, currentStates)
+
             currentBelief_input = np.asarray(currentBelief).flatten()
             reward = beliefReward(currentBelief_input, currentActions)
 
@@ -256,8 +259,8 @@ if __name__ == '__main__':
 
             # plt.pause(0.01)
             # plt.close('all')
-            # currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
-            currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
+            currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
+            # currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
             agent.remember(oldBelief_input, action, reward, currentBelief_input, done)
 
             oldStates = currentStates
