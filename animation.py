@@ -152,7 +152,7 @@ def isTerminals(state):
     wolf_coordinates = wolf_state[:2]
 
     if l2_norm(agent_coordinates, wolf_coordinates) < 10:
-    #if np.around(agent_coordinates).all == np.around(wolf_coordinates).all:
+    # if np.around(agent_coordinates).all == np.around(wolf_coordinates).all:
         return True
     return False
 
@@ -189,7 +189,6 @@ if __name__ == '__main__':
     statesList = [[10,10,0,0],[10,5,0,0],[15,15,0,0]]
     speedList = [10,8,8]
     movingRange=[0,0,800,800]
-
     assumeWolfPrecisionList=[50,1.3]
     sheepIdentity=0
     wolfIdentity=1
@@ -230,19 +229,23 @@ if __name__ == '__main__':
 
         done = False
 
+
+
         for time in range(1000):
 
             oldBelief_input = np.asarray(oldBelief).flatten()
             # oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
             oldBelief_input = np.reshape(oldBelief_input,[1,1,state_size]) # LSTM 
+            # print(oldBelief_input)
 
             action = agent.act(oldBelief_input)
 
             sheepAction = sheepActionList[action]
+            # sheepAction = np.asarray((1,1))
+
             # print (action, sheepAction)
 
             wolfAction = takeWolfAction(oldStates, wolfPrecision)
-
             distractorAction = takeDistractorAction(oldStates)
 
             currentActions = [sheepAction, wolfAction, distractorAction]
@@ -254,16 +257,12 @@ if __name__ == '__main__':
             currentBelief_input = np.asarray(currentBelief).flatten()
             reward = beliefReward(currentBelief_input, currentActions)
 
-            # print(currentBelief_input)
             # print (reward)
 
             if isTerminals(currentBelief_input):
                 done = 1
             else:
                 done = 0
-
-            # plt.pause(0.01)
-            # plt.close('all')
 
             currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
             # currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
@@ -286,6 +285,48 @@ if __name__ == '__main__':
             if done:
                 agent.updateTargetModel()
                 break
+
+        # pygame viz
+            import pygame
+            from pygame.color import THECOLORS
+            from pygame.locals import *
+
+            agent_state = oldBelief_input.flatten()[:5]
+            wolf_state = oldBelief_input.flatten()[5:10]
+            distractor_state = oldBelief_input.flatten()[10:15]
+
+            agent_coordinates = list(agent_state[:2])
+            wolf_coordinates = list(wolf_state[:2])
+            distractor_coordinates = list(distractor_state[:2])
+
+            agent_coordinates = list(map(int, agent_coordinates))
+            wolf_coordinates = list(map(int, wolf_coordinates))
+            distractor_coordinates = list(map(int, distractor_coordinates))
+
+            pygame.init()
+            #screen_size = [np.multiply(movingRange[2],30),np.multiply(movingRange[3],30)]
+            screen_size = [movingRange[2],movingRange[3]]
+            screen=pygame.display.set_mode(screen_size)
+            circleR = 10
+            screen.fill([0,0,0])
+            color = [THECOLORS['green'],THECOLORS['red'],THECOLORS['blue']]
+
+            position_list = [agent_coordinates, wolf_coordinates, distractor_coordinates]
+
+            print(position_list)
+            print(reward)
+
+            for drawposition in position_list:
+            	pygame.draw.circle(screen,color[int(position_list.index(drawposition))],drawposition,circleR)
+                #pygame.draw.circle(screen,color[int(position_list.index(drawposition))],[np.int(np.multiply(i,30)) for i in drawposition],circleR)
+            pygame.display.flip()
+            #pygame.time.wait(0.2)
+
+            for event in pygame.event.get():
+                if event.type == QUIT:
+                    pygame.quit()
+                    sys.exit()
+
 
         if e % 10 == 0:
             module_path = os.path.dirname(os.path.abspath(__file__))
