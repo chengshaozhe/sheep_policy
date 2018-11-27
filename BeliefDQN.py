@@ -148,7 +148,10 @@ def isTerminals(state):
     wolf_state = state[5:10]
     distractor_state = state[10:15]
 
-    if agent_state[:2].all == wolf_state[:2].all:
+    agent_coordinates = agent_state[:2]
+    wolf_coordinates = wolf_state[:2]
+
+    if np.around(agent_coordinates).all == np.around(wolf_coordinates).all:
         return True
     return False
 
@@ -259,6 +262,7 @@ if __name__ == '__main__':
 
             # plt.pause(0.01)
             # plt.close('all')
+
             currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
             # currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
             agent.remember(oldBelief_input, action, reward, currentBelief_input, done)
