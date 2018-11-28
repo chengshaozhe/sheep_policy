@@ -151,7 +151,7 @@ def isTerminals(state):
     agent_coordinates = agent_state[:2]
     wolf_coordinates = wolf_state[:2]
 
-    if l2_norm(agent_coordinates, wolf_coordinates) < 10:
+    if l2_norm(agent_coordinates, wolf_coordinates) <= 10:
     # if np.around(agent_coordinates).all == np.around(wolf_coordinates).all:
         return True
     return False
@@ -161,39 +161,28 @@ def beliefReward(state, action):
     wolf_state = state[5:10]
     distractor_state = state[10:15]
 
-    d1 = distance_punish(agent_state[:2], action, wolf_state[:2], l2_norm) 
-    d2 = distance_punish(agent_state[:2], action, distractor_state[:2], l2_norm) 
+    d1 = l2_norm(agent_state[:2], wolf_state[:2])
+    d2 = l2_norm(agent_state[:2], distractor_state[:2])
 
-    p1 = np.exp(wolf_state[-1])
-    p2 = np.exp(distractor_state[-1])
+    p1 = wolf_state[-1]
+    p2 = distractor_state[-1]
 
-    reward = d1 * p1 + d2 * p2
+    const = 3
+    reward = -1000/d1 * p1 - 1000/d2 * p2
 
     if isTerminals(state):
         return -500
-    return reward
+    return reward + const
 
 
 if __name__ == '__main__':
-    # env = GridWorld("test", nx=800, ny=800)
-    # obstacle_states = []
-    # env.add_obstacles(obstacle_states)
-    # obstacles = {s: -100 for s in obstacle_states}
-
-    # agent_state = [x1, y1, v1x1, v1x2]
-    # wolf_state = [x2, y2, v2x1, v2x2]
-    # distractor_state = [x3, y3, v3x1, v3x2]
-    # belief_prob = [p1, p2, p3]
-    # state = [agent_state, wolf_state, distractor_state, belief_prob]
-
-    statesList = [[10,10,0,0],[10,5,0,0],[15,15,0,0]]
+    statesListInit = [[10,10,0,0],[10,5,0,0],[15,15,0,0]]
     speedList = [10,8,8]
     movingRange=[0,0,800,800]
-    assumeWolfPrecisionList=[50,1.3]
+    assumeWolfPrecisionList = [50,11,3.3,1.83,0.92,0.31]
     sheepIdentity=0
     wolfIdentity=1
     distractorIdentity=2
-    wolfPrecision=50
     distractorPrecision=0.5/3.14
     
     transState = Transition.Transition(movingRange, speedList)
@@ -227,6 +216,7 @@ if __name__ == '__main__':
         oldStates = pd.DataFrame(statesList,index=[0,1,2],columns=['positionX','positionY','velocityX','velocityY'])
         oldBelief = initiateBeliefDF(statesList)
 
+        wolfPrecision = random.choice(assumeWolfPrecisionList)
         done = False
 
 
@@ -313,7 +303,7 @@ if __name__ == '__main__':
 
             position_list = [agent_coordinates, wolf_coordinates, distractor_coordinates]
 
-            print(position_list)
+            # print(position_list)
             print(reward)
 
             for drawposition in position_list:
