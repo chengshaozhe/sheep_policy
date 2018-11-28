@@ -26,17 +26,17 @@ def createHypothesisInformationDF(assumeWolfPrecisionList,deviationAngleDF,oldBe
 	objectIdentity=list(deviationAngleDF.index)
 	hypothesisIndex=pd.MultiIndex.from_product([assumeWolfPrecisionList,objectIdentity],names=['assumeChasingPrecision','Identity'])
 	hypothesisInformation=pd.DataFrame(list(deviationAngleDF.values)*len(assumeWolfPrecisionList),index=hypothesisIndex,columns=['chasingDeviation'])
-	hypothesisInformation['pLogPrior']=list(oldBelief.loc[1:]['logP'].values)*len(assumeWolfPrecisionList)
+	hypothesisInformation['pPrior']=list(oldBelief.loc[1:]['p'].values)*len(assumeWolfPrecisionList)
 	return hypothesisInformation
 
 def initiateBeliefDF(initialStateList):
 	beliefDF=pd.DataFrame(initialStateList,index=range(len(initialStateList)),columns=['positionX','positionY','velocityX','velocityY'])
-	beliefDF['logP']=[0]+[1.0/(len(beliefDF.index)-1)]*(len(beliefDF.index)-1)
+	beliefDF['p']=[0]+[1.0/(len(beliefDF.index)-1)]*(len(beliefDF.index)-1)
 	return beliefDF
 
-def computeLogLikelihood(deviationAngle,assumePrecision):
-	pLogLikelihood = stats.vonmises.logpdf(deviationAngle, assumePrecision) + np.log(2) + np.log(math.pi)
-	return pLogLikelihood
+def computeLikelihood(deviationAngle,assumePrecision):
+	pLikelihood = stats.vonmises.pdf(deviationAngle, assumePrecision)*2*math.pi
+	return pLikelihood
 
 class BeliefUpdate():
 	def __init__(self,assumeWolfPrecisionList,sheepIdentity):
@@ -45,12 +45,12 @@ class BeliefUpdate():
 	def __call__(self,oldBelief,currentStates):
 		deviationAngleDF=computeDeviationAngleDF(oldBelief, currentStates, self.sheepIdentity)
 		hypothesisInformation=createHypothesisInformationDF(self.assumeWolfPrecisionList, deviationAngleDF, oldBelief)
-		hypothesisInformation['pLogLikelihood']=computeLogLikelihood(hypothesisInformation['chasingDeviation'].values,hypothesisInformation.index.get_level_values('assumeChasingPrecision'))
-		hypothesisInformation['logP']=hypothesisInformation['pLogPrior'] + hypothesisInformation['pLogLikelihood']
-		hypothesisInformation['logP']=np.log(np.exp(hypothesisInformation['logP'])/np.exp(hypothesisInformation['logP']).sum())
-		posteriorList=[0]+list(np.log(np.exp(hypothesisInformation['logP']).groupby('Identity').sum().values))
+		hypothesisInformation['pLikelihood']=computeLikelihood(hypothesisInformation['chasingDeviation'].values,hypothesisInformation.index.get_level_values('assumeChasingPrecision'))
+		hypothesisInformation['p']=hypothesisInformation['pPrior'] * hypothesisInformation['pLikelihood']
+		hypothesisInformation['p']=hypothesisInformation['p']/hypothesisInformation['p'].sum()
+		posteriorList=[0]+list(hypothesisInformation['p'].groupby('Identity').sum().values)
 		currentBelief=currentStates.copy()
-		currentBelief['logP']=posteriorList
+		currentBelief['p']=posteriorList
 		return currentBelief
 
 if __name__=="__main__":
