@@ -67,7 +67,7 @@ class BeliefUpdateWithAttention():
 		currentBelief=oldBelief.copy()
 		currentBelief['p']=hypothesisInformation['p']
 		if np.mod(currentTime,self.attentionSwitchFrequency)==0:
-			posteriorList=currentBelief['p'].values
+			posteriorList=currentBelief.groupby('Identity').sum()['p'].values
 			currentAttentionStatus=self.switchAttention(posteriorList,oldAttentionStatus)
 		else:
 			currentAttentionStatus=oldAttentionStatus.copy()
@@ -101,7 +101,7 @@ if __name__=="__main__":
 	print('initialFunctions',datetime.datetime.now()-time0)
 	currentStates=transState(oldStates, currentActions)
 	print('updateState',datetime.datetime.now()-time0)
-	[currentBelief,currentAttentionStatus]=updateBelief(oldBelief,oldStates,currentStates,oldAttentionStatus,1)
+	[currentBelief,currentAttentionStatus]=updateBelief(oldBelief,oldStates,currentStates,oldAttentionStatus,12)
 	print('updateBelief',datetime.datetime.now()-time0)
 	print(oldBelief)
 	print(currentStates)
