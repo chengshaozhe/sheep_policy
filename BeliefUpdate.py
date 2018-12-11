@@ -67,6 +67,7 @@ class BeliefUpdateWithAttention():
 		currentBelief=oldBelief.copy()
 		currentBelief['p']=hypothesisInformation['p']
 		if np.mod(currentTime,self.attentionSwitchFrequency)==0:
+			posteriorList=currentBelief['p'].values
 			currentAttentionStatus=self.switchAttention(posteriorList,oldAttentionStatus)
 		else:
 			currentAttentionStatus=oldAttentionStatus.copy()
@@ -77,10 +78,10 @@ if __name__=="__main__":
 	time0=datetime.datetime.now()
 	import Transition
 	objectsNumber=3
-	statesList=[[10,10,0,0],[10,5,0,0],[15,15,0,0]]
+	statesList=[[10,10,0,0],[10,5,0,0],[9,9,0,0]]
 	oldStates=pd.DataFrame(statesList,index=[0,1,2],columns=['positionX','positionY','velocityX','velocityY'])
 	speedList=[5,3,3]
-	currentActions=[[0,3],[0,3],[0,3]]
+	currentActions=[[0,3],[0,3],[-3,-3]]
 	movingRange=[0,0,15,15]
 	assumeWolfPrecisionList=[50,1.3]
 	attentionLimitation=2
@@ -104,6 +105,7 @@ if __name__=="__main__":
 	print('updateBelief',datetime.datetime.now()-time0)
 	print(oldBelief)
 	print(currentStates)
+	print(currentAttentionStatus)
 	print(currentBelief)
 
 
