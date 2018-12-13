@@ -14,11 +14,12 @@ def samplePosition(positionRange):
 	return position
 
 class InitialPosition():
-	def __init__(self,movingRange,maxDistanceToFixation,minDistanceEachOther,maxDistanceEachOther):
+	def __init__(self,movingRange,maxDistanceToFixation,minDistanceEachOther,maxDistanceEachOther,minDistanceWolfSheep):
 		self.movingRange=movingRange
 		self.maxDistanceToFixation=maxDistanceToFixation
 		self.minDistanceEachOther=minDistanceEachOther
 		self.maxDistanceEachOther=maxDistanceEachOther
+		self.minDistanceWolfSheep=minDistanceWolfSheep
 	def __call__(self,numberObjects):
 		positionList=[samplePosition(self.movingRange) for i in range(numberObjects)]
 		pairList=list(it.combinations(range(numberObjects),2))
@@ -27,7 +28,8 @@ class InitialPosition():
 		while sampleCount<100000:
 			distanceToFixationArray=np.array([computeDistance(position,fixationPosition) for position in positionList])
 			distanceEachOtherArray=np.array([computeDistance(positionList[index[0]],positionList[index[1]]) for index in pairList])
-			if np.all(distanceToFixationArray<self.maxDistanceToFixation) & np.all(distanceEachOtherArray>self.minDistanceEachOther) & np.all(distanceEachOtherArray<self.maxDistanceEachOther):
+			distanceWolfSheep=computeDistance(positionList[0],positionList[1])
+			if (distanceWolfSheep>self.minDistanceWolfSheep) & np.all(distanceToFixationArray<self.maxDistanceToFixation) & np.all(distanceEachOtherArray>self.minDistanceEachOther) & np.all(distanceEachOtherArray<self.maxDistanceEachOther):
 				break
 			else:
 				positionList=[samplePosition(self.movingRange) for i in range(numberObjects)]
@@ -44,9 +46,10 @@ if __name__=="__main__":
 	maxDistanceToFixation=movingRange[3]
 	minDistanceEachOther=50
 	maxDistanceEachOther=180
+	minDistanceWolfSheep=120
 	numberObjects=6
 
-	initialPosition=InitialPosition(movingRange, maxDistanceToFixation, minDistanceEachOther, maxDistanceEachOther)
+	initialPosition=InitialPosition(movingRange, maxDistanceToFixation, minDistanceEachOther, maxDistanceEachOther, minDistanceWolfSheep)
 
 	positionList=initialPosition(numberObjects)
 	print(positionList)
