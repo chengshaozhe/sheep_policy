@@ -74,4 +74,4 @@ if __name__ == '__main__':
     sheepAction = [(speed * np.cos(actionAngles * np.pi / 180),
                     speed * np.sin(actionAngles * np.pi / 180)) for actionAngles in actionAnglesList]
     print(actionAnglesList)
-    print (action)
+    print (sheepAction)

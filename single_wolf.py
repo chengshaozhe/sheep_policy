@@ -6,9 +6,10 @@ import functools as ft
 import os
 import csv
 from PIL import Image
+import json
 
 from keras.models import Sequential
-from keras.layers import Dense, Conv2D, MaxPooling2D, Flatten,LSTM,BatchNormalization,Activation
+from keras.layers import Dense, Conv2D, MaxPooling2D, Flatten, LSTM, BatchNormalization,Activation
 from keras.optimizers import Adam
 from keras.callbacks import ModelCheckpoint, TensorBoard
 from keras import backend as K
@@ -70,7 +71,7 @@ class DQNAgent:
     #     model.add(BatchNormalization())
     #     model.add(Activation('relu'))
     #     model.add(Dense(self.action_size, activation='softmax'))
-    #     model.compile(loss='mse',
+    #     model.compile(loss=self._huberLoss,
     #                   optimizer=Adam(lr=self.learning_rate))
     #     return model
 
@@ -168,47 +169,21 @@ def logResults(filename, loss_log, score_log):
         for score_item in score_log:
             wr.writerow(score_item)
 
-def isTerminals(state,time):
-    agent_state = state[:4]
-    wolf_state = state[4:8]
 
-    agent_coordinates = agent_state[:2]
-    wolf_coordinates = wolf_state[:2]
-
-    if l2_norm(agent_coordinates, wolf_coordinates) <= 30 and time > 200:
-        return True
-    return False
-
-def beliefReward(state, action, movingRange, time):
-    if isTerminals(state,time):
+def stateReward(state, action, movingRange,time):
+    if isTerminals(state):
         return -500
 
     agent_state = state[:4]
+    wolf_state = state[4:8]
+    distance = l2_norm(agent_state[:2], wolf_state[:2])
 
-    target_states =  state[4:24]
-    target_list = [target_states[i:i+4] for i in range(0,len(target_states),4)]
-    distance_list = [l2_norm(agent_state[:2], target_state[:2]) for target_state in target_list]
-
-    belief_states = state[24:]
-    belief_states_list = [belief_states[i:i+6] for i in range(0,len(belief_states),6)]
-    wolf_prob_list = [np.sum(probs) for probs in belief_states_list]
-
-    def linear_punish(distance, prob, const = -500):
-        punish = const / distance * prob
-        return punish
-
-    def linear_reward(distance, prob, const = 0.01):
-        reward =  distance * np.exp(prob) * const
-        return reward
-
-    # wolf_punish = np.sum([linear_punish(distance, prob) for (distance, prob) in zip(distance_list, wolf_prob_list)])
-   
-    def signod_barrier(x,  m=1, s=1):
+    def signod_barrier(x, m=1, s=1):
         expt_term = np.exp(-s*x)
         result =  m/(1.0+expt_term) 
         return result
 
-    def barrier_punish_sigmod(pos, movingRange):
+    def barrier_punish(pos, movingRange):
         sn_arr = np.asarray(pos)
 
         lower = np.asarray(movingRange[:2])
@@ -223,30 +198,38 @@ def beliefReward(state, action, movingRange, time):
 
     def wall_punish(position, movingRange):
         wall_punish = 0
-        x, y = position
+        x,y = position
         if x < 30 or x > movingRange[-1]-30:
-            wall_punish -= min(500/x, 100)
+            wall_punish -= min(1000/x, 100)
         if y < 30 or y > movingRange[-1]-30:
-            wall_punish -= min(500/y, 100)
+            wall_punish -= min(1000/y, 100)
         return wall_punish 
 
-
-    def time_reward(time, const=1):
+    def time_reward(time, const=0.1):
         if time == 999:
             reward = 500
         else:
             reward =  const
         return reward
 
-
-    # wall_punish = barrier_punish_sigmod(state[:2], movingRange)
+    # wall_punish = barrier_punish(state[:2], movingRange)
     wall_punish = wall_punish(state[:2], movingRange)
     survive_reward = time_reward(time)
-    distance_reward = np.sum([linear_reward(distance, prob) for (distance, prob) in zip(distance_list, wolf_prob_list)])
-    
+    distance_reward = distance * 0.1
+
     print(wall_punish, distance_reward, survive_reward)
     return wall_punish + distance_reward + survive_reward
 
+def isTerminals(state):
+    agent_state = state[:4]
+    wolf_state = state[4:8]
+
+    agent_coordinates = agent_state[:2]
+    wolf_coordinates = wolf_state[:2]
+
+    if l2_norm(agent_coordinates, wolf_coordinates) <= 30:
+        return True
+    return False
 
 if __name__ == '__main__':
     statesListInit = [[10,10,0,0],[10,5,0,0],[15,15,0,0]]
@@ -257,18 +240,13 @@ if __name__ == '__main__':
     sheepIdentity = 0
     wolfIdentity = 1
 
-    distractorIdentity = 2
-    distractor2_Identity = 3
-    distractor3_Identity = 4
-    distractor4_Identity = 5
-
     distractorPrecision = 0.5 / 3.14
     maxDistanceToFixation = movingRange[3]
     minDistanceEachOther = 50
     maxDistanceEachOther = 180
     minDistanceWolfSheep = 120
 
-    numberObjects = 6
+    numberObjects = 2
 
     PureAttentionModel = 0
     HybridModel = 0
@@ -305,11 +283,7 @@ if __name__ == '__main__':
     updateBelief = BeliefUpdateWithAttention(computePrecisionAndDecay, switchAttention, attentionSwitchFrequency, sheepIdentity)
 
     takeWolfAction = WolfPolicy(sheepIdentity, wolfIdentity, speedList[wolfIdentity])
-    takeDistractorAction = DistractorPolicy(distractorIdentity, distractorPrecision, speedList[distractorIdentity])
-    takeDistractorAction2 = DistractorPolicy(distractor2_Identity, distractorPrecision, speedList[distractor2_Identity])
-    takeDistractorAction3 = DistractorPolicy(distractor3_Identity, distractorPrecision, speedList[distractor3_Identity])
-    takeDistractorAction4 = DistractorPolicy(distractor4_Identity, distractorPrecision, speedList[distractor4_Identity])
-
+   
 
     numOfActions = 16
     actionAnglesList = [i * (360 / numOfActions)
@@ -319,18 +293,18 @@ if __name__ == '__main__':
                     speedList[sheepIdentity] * np.sin(actionAngles * np.pi / 180))) for actionAngles in actionAnglesList]
 
 
-    state_size = 8
+    state_size = numberObjects * 4 
     action_size = numOfActions
     agent = DQNAgent(state_size, action_size)
 
-    agent.load("./save/SingleWolf_episode_3000.h5") 
+    # agent.load("./save/SingleWolf_episode_3000.h5") 
 
     loss_log = []
     score_log = []
 
     batch_size = 64
     replay_start_size = 1000
-    num_opisodes = 1000001
+    num_opisodes = 100001
 
     for e in range(num_opisodes):
         score = 0
@@ -350,72 +324,27 @@ if __name__ == '__main__':
         oldStates = pd.DataFrame(statesList,index=list(range(numberObjects)),
             columns=['positionX','positionY','velocityX','velocityY'])
 
-        oldBelief = initiateBeliefDF(numberObjects, assumeWolfPrecisionList)
-
-        oldAttentionStatus = initiateAttentionStatus(oldBelief, attentionLimitation)
-
         wolfPrecision = random.choice(assumeWolfPrecisionList)
+        # wolfPrecision = 50
         done = False
 
         for time in range(1000):
             oldStates_array = np.asarray(oldStates).flatten()
-            oldBelief_array = np.asarray(oldBelief).flatten()
-            # print(oldBelief_array.shape)
-            oldBelief_input = np.concatenate((oldStates_array, oldBelief_array))
-            # print(oldBelief_input)
+            # oldStates_input = np.reshape(oldStates_array,[1,1,state_size]) # LSTM 
+            oldStates_input = np.reshape(oldStates_array,[1,state_size])
 
-            # oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
-            # oldBelief_input = np.reshape(oldBelief_input,[1,1,state_size]) # LSTM 
-            # print(oldBelief_input)
+            # action = agent.act(oldStates_input)
+            action = agent.act(oldStates_input)
 
-            belief_states = oldBelief_input.flatten()[24:]
-            belief_states_list = [belief_states[i:i+6] for i in range(0,len(belief_states),6)]
-            wolf_prob_list = [np.sum(probs) for probs in belief_states_list]
-
-            # wolf_index = np.argmax(wolf_prob_list)
-            count = np.random.multinomial(1, wolf_prob_list)
-            wolf_index = np.argmax(count)
-            print (wolf_index)
-
-            if wolf_index==0:
-                print('right!')
-            else:
-                print("wrong!!")
-
-            agent_input = oldBelief_input[4*(wolf_index+1):4*(wolf_index+1)+4]
-            agent_input = np.concatenate((oldBelief_input[:4], agent_input))
-            agent_input= np.reshape(agent_input,[1,state_size])
-
-            action = agent(agent_input)
             sheepAction = sheepActionList[action]
 
-            # print (action, sheepAction)
             wolfAction = takeWolfAction(oldStates, wolfPrecision)
-            distractorAction =  np.array(initVelocity)
-            distractorAction2 =  np.array(initVelocity)
-            distractorAction3 =  np.array(initVelocity)
-            distractorAction4 =  np.array(initVelocity)
-
-            distractor_update_step = 20
-            if time % distractor_update_step == 0:
-                distractorAction = takeDistractorAction(oldStates)
-                distractorAction2 = takeDistractorAction2(oldStates)
-                distractorAction3 = takeDistractorAction3(oldStates)
-                distractorAction4 = takeDistractorAction4(oldStates)
-
-            currentActions = [sheepAction, wolfAction, distractorAction, 
-                                distractorAction2, distractorAction3, distractorAction4]
-            # print (time,currentActions)
+            currentActions = [sheepAction, wolfAction]
             
             currentStates = transState(oldStates, currentActions)
-            [currentBelief, currentAttentionStatus] = updateBelief(oldBelief, oldStates, currentStates, oldAttentionStatus, time+1)
-
             currentStates_array = np.asarray(currentStates).flatten()
-            currentBelief_array = np.asarray(currentBelief).flatten()
-            currentBelief_input = np.concatenate((currentStates_array, currentBelief_array))
-            # print (currentBelief_input)
 
-            reward = beliefReward(currentBelief_input, currentActions, movingRange, time)
+            reward = stateReward(currentStates_array, currentActions, movingRange,time)
 
             # print (reward)
 
@@ -425,35 +354,22 @@ if __name__ == '__main__':
                 import pygame
                 from pygame.color import THECOLORS
                 from pygame.locals import *
-                agent_state = oldBelief_input.flatten()[:4]
-                wolf_state = oldBelief_input.flatten()[4:8]
-                distractor_state = oldBelief_input.flatten()[8:12]
-                distractor_state2 = oldBelief_input.flatten()[12:16]
-                distractor_state3 = oldBelief_input.flatten()[16:20]
-                distractor_state4 = oldBelief_input.flatten()[20:24]
-
+                agent_state = oldStates_input.flatten()[:4]
+                wolf_state = oldStates_input.flatten()[4:8]
+           
                 agent_coordinates = list(agent_state[:2])
                 wolf_coordinates = list(wolf_state[:2])
-                distractor_coordinates = list(distractor_state[:2])
-                distractor_coordinates2 = list(distractor_state2[:2])
-                distractor_coordinates3 = list(distractor_state3[:2])
-                distractor_coordinates4 = list(distractor_state4[:2])
-
+                
                 agent_coordinates = list(map(int, agent_coordinates))
                 wolf_coordinates = list(map(int, wolf_coordinates))
-                distractor_coordinates = list(map(int, distractor_coordinates))
-                distractor_coordinates2 = list(map(int, distractor_coordinates2))
-                distractor_coordinates3 = list(map(int, distractor_coordinates3))
-                distractor_coordinates4 = list(map(int, distractor_coordinates4))
-
+                
                 pygame.init()
                 screen_size = [movingRange[2],movingRange[3]]
                 screen = pygame.display.set_mode(screen_size)
                 circleR = 10
                 screen.fill([0,0,0])
-                color = [THECOLORS['green'],THECOLORS['blue']] + [THECOLORS['blue']] * (numberObjects-2)
-                position_list = [agent_coordinates, wolf_coordinates, distractor_coordinates,
-                                distractor_coordinates2, distractor_coordinates3, distractor_coordinates4]
+                color = [THECOLORS['green'],THECOLORS['red']] + [THECOLORS['blue']] * (numberObjects-2)
+                position_list = [agent_coordinates, wolf_coordinates]
 
                 # print(position_list)
                 print(reward)
@@ -469,19 +385,17 @@ if __name__ == '__main__':
                         pygame.quit()
                         sys.exit()
 
-
-            if isTerminals(currentBelief_input,time):
+            if isTerminals(currentStates_array):
                 done = 1
             else:
                 done = 0
 
-            # currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
-            # currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
+            # currentStates_input = np.reshape(currentStates_array,[1,1,state_size]) # LSTM input
+            currentStates_input = np.reshape(currentStates_array,[1,state_size])
 
-            # agent.remember(oldBelief_input, action, reward, currentBelief_input, done)
+            agent.remember(oldStates_input, action, reward, currentStates_input, done)
 
             oldStates = currentStates
-            oldBelief = currentBelief
 
             if len(agent.memory) > replay_start_size:
                 states_mb, targets_mb = agent.replay(batch_size)
@@ -510,7 +424,7 @@ if __name__ == '__main__':
         if e % 10 == 0:
             module_path = os.path.dirname(os.path.abspath(__file__))
             data_path = os.path.join(module_path, "save")
-            name = 'IdealObserveModel_episode_' + str(e) + '.h5'
+            name = 'SingleWolf_episode_' + str(e) + '.h5'
             weight_path = os.path.join(data_path, name)
             agent.save(weight_path)
 
@@ -522,20 +436,16 @@ if __name__ == '__main__':
         TEST = 0
         if TEST:
             if e % 100 == 0:
-                test_opisodes = 10
+                test_episodes = 10
                 score_log = []
-                acc_log = []
                 escape_rate_log = []
                 done = False
                 for wolfPrecision in assumeWolfPrecisionList:
                     total_score = []
-                    total_acc = []
-                    episode_acc = []
                     escape_count = 0
                     escape_rate = 0
-                    for test_opisode in range(test_opisodes):
+                    for test_episode in range(test_episodes):
                         score = 0
-                        step_acc = []
                         init_positionList = initialPosition(numberObjects)
                         # print(init_positionList)
                         if init_positionList == False:
@@ -548,114 +458,66 @@ if __name__ == '__main__':
 
                         oldStates = pd.DataFrame(statesList,index=list(range(numberObjects)),
                             columns=['positionX','positionY','velocityX','velocityY'])
-                        oldBelief = initiateBeliefDF(numberObjects, assumeWolfPrecisionList)
-                        oldAttentionStatus = initiateAttentionStatus(oldBelief, attentionLimitation)
 
                         wolfPrecision = wolfPrecision
                         done = False
                         for time in range(1000):
-
                             oldStates_array = np.asarray(oldStates).flatten()
-                            oldBelief_array = np.asarray(oldBelief).flatten()
-                            # print(oldBelief_array.shape)
-                            oldBelief_input = np.concatenate((oldStates_array, oldBelief_array))
-                            # print(oldBelief_input)
+                            # oldStates_input = np.reshape(oldStates_array,[1,1,state_size]) # LSTM 
+                            oldStates_input = np.reshape(oldStates_array,[1,state_size])
 
-                            oldBelief_input = np.reshape(oldBelief_input,[1,state_size])
-                            # oldBelief_input = np.reshape(oldBelief_input,[1,1,state_size]) # LSTM 
-                            # print(oldBelief_input)
-
-                            # max action
-                            action = agent(oldBelief_input)
-
-
+                            action = agent(oldStates_input)
                             sheepAction = sheepActionList[action]
 
-                            # print (action, sheepAction)
                             wolfAction = takeWolfAction(oldStates, wolfPrecision)
-                            distractorAction =  np.array(initVelocity)
-                            distractorAction2 =  np.array(initVelocity)
-                            distractorAction3 =  np.array(initVelocity)
-                            distractorAction4 =  np.array(initVelocity)
-
-                            distractor_update_step = 20
-                            if time % distractor_update_step == 0:
-                                distractorAction = takeDistractorAction(oldStates)
-                                distractorAction2 = takeDistractorAction2(oldStates)
-                                distractorAction3 = takeDistractorAction3(oldStates)
-                                distractorAction4 = takeDistractorAction4(oldStates)
-
-                            currentActions = [sheepAction, wolfAction, distractorAction, 
-                                                distractorAction2, distractorAction3, distractorAction4]
-                            # print (time,currentActions)
+                            currentActions = [sheepAction, wolfAction]
                             
                             currentStates = transState(oldStates, currentActions)
-                            [currentBelief, currentAttentionStatus] = updateBelief(oldBelief, oldStates, currentStates, oldAttentionStatus, time+1)
-
-
                             currentStates_array = np.asarray(currentStates).flatten()
-                            currentBelief_array = np.asarray(currentBelief).flatten()
-                            currentBelief_input = np.concatenate((currentStates_array, currentBelief_array))
-                            # print (currentBelief_input)
 
+                            reward = stateReward(currentStates_array, currentActions, movingRange,time)
 
-                            reward = beliefReward(currentBelief_input, currentActions, movingRange, time)
 
                             # print (reward)
 
-                            if isTerminals(currentBelief_input,time):
+                            if isTerminals(currentStates_array):
                                 done = 1
                             else:
                                 done = 0
 
-                            # currentBelief_input = np.reshape(currentBelief_input,[1,1,state_size]) # LSTM input
-                            currentBelief_input = np.reshape(currentBelief_input,[1,state_size])
+                            # currentStates_input = np.reshape(currentStates_array,[1,1,state_size]) # LSTM input
+                            currentStates_input = np.reshape(currentStates_array,[1,state_size])
 
                             oldStates = currentStates
-                            oldBelief = currentBelief
-
-                            beliefACC = np.sum(oldBelief_input.flatten()[24:30])
-
-                            step_acc.append(beliefACC)
-                            episode_acc = np.mean(step_acc)
 
 
                             if done:
-                                print("episode: {}/{}, score: {}, beliefACC: {}"
-                                      .format(test_opisode, test_opisodes, time, episode_acc))
+                                print("episode: {}/{}, score: {}"
+                                      .format(test_episode, test_episodes, time))
 
                                 score = time
                                 total_score.append([score])
-                                total_acc.append([episode_acc])
                                 break
                             
                             if time == 999:
                                 escape_count += 1
                                 total_score.append([999])
-                                total_acc.append([episode_acc])
 
 
-                                print("episode: {}/{}, score: {}, beliefACC: {}"
-                                      .format(test_opisode, test_opisodes, time, episode_acc))
+                                print("episode: {}/{}, score: {}"
+                                      .format(test_episode, test_episodes, time))
 
                 
-                    escape_rate = escape_count / test_opisodes 
+                    escape_rate = escape_count / test_episodes 
                     escape_rate_log.append([escape_rate])
-                    acc_log.append([np.mean(total_acc)])
                     score_log.append([np.mean(total_score)])
 
                     print('wolfPrecision:', wolfPrecision)
-                    print('acc:', acc_log)
                     print('score:', score_log)
                     print('escape:', escape_rate_log)
                     print('=========================================')
 
-                filename = 'test_episodes' + '-'  + str(e) + 'test' + str(test_opisodes)
-                with open('analysis/acc-' + filename + '.csv', 'w') as lf:
-                    wr = csv.writer(lf)
-                    for acc_item in acc_log:
-                        wr.writerow(acc_item)
-
+                filename = 'test_episode' + '-'  + str(e) + 'test' + str(test_episodes)
                 with open('analysis/score-' + filename + '.csv', 'w') as lf:
                     wr = csv.writer(lf)
                     for score_item in score_log:

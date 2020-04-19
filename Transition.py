@@ -63,3 +63,5 @@ if __name__ == "__main__":
     print(currentStates)
     print(currentActions)
     print(newStates)
+
+    print(renormalVector((5,5),8))
